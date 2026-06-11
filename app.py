@@ -52,7 +52,7 @@ with st.sidebar:
     
     st.divider()
     
-    # Lựa chọn mô hình (Notebook có 3 mô hình)
+    # Lựa chọn mô hình
     model_choice = st.selectbox(
         "Chọn mô hình phân loại",
         options=["Random Forest", "Decision Tree", "Logistic Regression"],
@@ -61,7 +61,7 @@ with st.sidebar:
     
     st.subheader("Tham số mô hình AI")
     
-    # Hiển thị tham số động theo mô hình được lựa chọn dựa trên cấu hình trong notebook
+    # Hiển thị tham số động theo mô hình được lựa chọn
     params = {}
     if model_choice == "Random Forest":
         params['n_estimators'] = st.slider("Số cây (n_estimators)", min_value=10, max_value=300, value=100, step=10, help="Số lượng cây quyết định trong rừng.")
@@ -113,17 +113,18 @@ if not feature_cols or target_col not in df_raw.columns:
     st.stop()
 
 # --------------------------------------------------------------------------------
-# KHỐI XỬ LÝ HUẤN LUYỆN (Lưu trữ trạng thái vào st.session_state)
+# KHỐI XỬ LÝ HUẤN LUYỆN (ĐÃ SỬA LỖI MATCH CHIỀU DỮ LIỆU CỦA SCALER)
 # --------------------------------------------------------------------------------
 if train_clicked:
     with st.spinner("🔄 Đang xử lý tiền dữ liệu và huấn luyện mô hình..."):
+        # CHỈ lấy các cột đặc trưng X_1 đến X_14 để đưa vào mô hình, loại bỏ biến y và các biến rác
         X = df_raw[feature_cols]
         y = df_raw[target_col]
         
         # Phân tách tập dữ liệu
         X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=params.get('random_state', 42), stratify=y)
         
-        # Tiền xử lý dữ liệu (Scaler) giống chuẩn quy trình trong Notebook
+        # Tiền xử lý dữ liệu: CHỈ fit trên tập X_train gồm 14 cột đặc trưng đặc định
         scaler = StandardScaler()
         X_train_scaled = scaler.fit_transform(X_train)
         X_test_scaled = scaler.transform(X_test)
@@ -153,7 +154,6 @@ if train_clicked:
         
         # Dự báo trên tập kiểm định
         y_pred = model.predict(X_test_scaled)
-        y_prob = model.predict_proba(X_test_scaled)[:, 1] if hasattr(model, "predict_proba") else None
         
         # Tính toán các chỉ tiêu hiệu năng kiểm định
         metrics = {
@@ -165,7 +165,7 @@ if train_clicked:
             "report": classification_report(y_test, y_pred, output_dict=True)
         }
         
-        # Lưu kết quả vào session_state để tái sử dụng ở mọi Tab mà không cần huấn luyện lại
+        # Lưu kết quả vào session_state để tái sử dụng ở mọi Tab
         st.session_state['trained_model'] = model
         st.session_state['scaler'] = scaler
         st.session_state['metrics'] = metrics
@@ -190,14 +190,12 @@ tab1, tab2, tab3, tab4 = st.tabs([
 with tab1:
     st.subheader("📊 Phân tích Thống kê Dữ liệu Thô")
     
-    # Hiển thị số liệu kích thước dữ liệu tổng quan
     m_col1, m_col2, m_col3 = st.columns(3)
     with m_col1:
         st.metric("Tổng số dòng dữ liệu (Rows)", f"{df_raw.shape[0]:,}")
     with m_col2:
         st.metric("Tổng số cột đặc trưng (Columns)", f"{df_raw.shape[1]}")
     with m_col3:
-        # Ước lượng dung lượng tệp tải lên
         file_size_mb = len(uploaded_file.getvalue()) / (1024 * 1024)
         st.metric("Dung lượng tệp dữ liệu", f"{file_size_mb:.2f} MB")
         
@@ -205,7 +203,6 @@ with tab1:
     st.dataframe(df_raw.head(5), use_container_width=True)
     
     st.markdown("#### 📉 Bảng mô tả thống kê các biến mô hình (X & y)")
-    # Chỉ mô tả thống kê các biến đưa vào mô hình quyết định cấu trúc
     selected_cols_to_desc = feature_cols + [target_col]
     st.dataframe(df_raw[selected_cols_to_desc].describe().T, use_container_width=True)
 
@@ -215,7 +212,6 @@ with tab1:
 with tab2:
     st.subheader("📈 Phân tích Phân phối Biến đặc trưng & Mục tiêu")
     
-    # 1. Vẽ phân phối biến mục tiêu ưu tiên trước tiên
     fig_target = px.bar(
         df_raw[target_col].value_counts().reset_index(),
         x=target_col,
@@ -228,7 +224,6 @@ with tab2:
     st.plotly_chart(fig_target, use_container_width=True)
     
     st.markdown("#### Trực quan các đặc trưng giao dịch quan trọng")
-    # Sử dụng multiselect để người dùng lựa chọn biến muốn xem phân phối (Tránh quá tải nếu có > 4 biến)
     default_features = feature_cols[:4] if len(feature_cols) >= 4 else feature_cols
     selected_features = st.multiselect(
         "Chọn các đặc trưng X cần vẽ biểu đồ phân phối:", 
@@ -237,7 +232,6 @@ with tab2:
     )
     
     if selected_features:
-        # Bố trí biểu đồ dạng lưới cân đối tự động dựa trên số lượng được chọn
         cols = st.columns(2)
         for idx, feat in enumerate(selected_features):
             col_to_use = cols[idx % 2]
@@ -262,7 +256,6 @@ with tab2:
 with tab3:
     st.subheader("🎯 Đánh giá Hiệu năng Chỉ số Mô hình sau Huấn luyện")
     
-    # Điều phối: Kiểm tra xem mô hình đã được bấm nút huấn luyện hay chưa
     if 'trained_model' not in st.session_state:
         st.info("ℹ️ Mô hình chưa được cấu hình huấn luyện. Vui lòng chọn tham số và bấm nút **[🚀 Huấn luyện mô hình]** ở thanh bên trái (Sidebar).")
     else:
@@ -271,7 +264,6 @@ with tab3:
         
         st.markdown(f"#### Thuật toán hiện tại đang đánh giá: **{model_name}**")
         
-        # Trình bày chỉ tiêu vô hướng hiệu năng chính
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("Độ chính xác (Accuracy)", f"{metrics['accuracy']:.4%}")
         c2.metric("Độ chuẩn xác (Precision)", f"{metrics['precision']:.4%}")
@@ -322,18 +314,12 @@ with tab4:
             horizontal=True
         )
         
-        # ------------------------------------------------------------------------
         # CHẾ ĐỘ 1 — NHẬP TRỰC TIẾP QUA FORM INPUT
-        # ------------------------------------------------------------------------
         if predict_mode == "Nhập chỉ số trực tiếp của một giao dịch":
             st.markdown("##### ✏️ Điền các thông số kỹ thuật của giao dịch cần kiểm tra:")
             
-            # Tạo form nhập dữ liệu động theo danh sách biến đặc trưng
             with st.form("single_prediction_form"):
                 input_data = {}
-                
-                # Tính toán khoảng giá trị mặc định dựa trên dữ liệu thô để tối ưu trải nghiệm nhập liệu
-                # Chia thành các hàng cột để form cân đối
                 form_cols = st.columns(3)
                 for idx, feat in enumerate(feature_cols):
                     col_target = form_cols[idx % 3]
@@ -354,13 +340,11 @@ with tab4:
                 submit_predict = st.form_submit_button("🔍 Tiến hành phân tích rủi ro", type="primary")
                 
             if submit_predict:
-                # Chuyển đổi dữ liệu input sang định dạng DataFrame
                 single_df = pd.DataFrame([input_data])
                 
-                # Áp dụng bộ chuẩn hóa scaler từ lúc huấn luyện (RẤT QUAN TRỌNG)
+                # Sẽ chạy hoàn toàn mượt mà vì bộ scaler bây giờ đã được fit trên đúng 14 đặc trưng này
                 single_scaled = scaler.transform(single_df[feature_cols])
                 
-                # Dự báo kết quả
                 prediction = model.predict(single_scaled)[0]
                 proba = model.predict_proba(single_scaled)[0] if hasattr(model, "predict_proba") else None
                 
@@ -378,12 +362,10 @@ with tab4:
                     p_col2.metric("Xác suất Gian lận (Class 1)", f"{proba[1]:.2%}")
                     st.progress(float(proba[1]))
                     
-        # ------------------------------------------------------------------------
         # CHẾ ĐỘ 2 — TẢI FILE DỰ BÁO HÀNG LOẠT
-        # ------------------------------------------------------------------------
         elif predict_mode == "Tải tệp danh sách nhiều giao dịch (Dự báo hàng loạt)":
             st.markdown("##### 📁 Tải lên tệp dữ liệu cần chấm điểm rủi ro hàng loạt")
-            st.caption("Yêu cầu: Tệp cấu trúc phải chứa đầy đủ các cột thuộc tính đặc trưng từ `X_1` đến `X_14` (Ví dụ như file dữ liệu `X_new.xlsx` của bạn).")
+            st.caption("Yêu cầu: Tệp cấu trúc phải chứa đầy đủ các cột thuộc tính đặc trưng từ `X_1` đến `X_14`.")
             
             bulk_file = st.file_uploader("Chọn file dữ liệu mới cần dự báo (.csv, .xlsx)", type=["csv", "xlsx"], key="bulk_uploader")
             
@@ -391,7 +373,6 @@ with tab4:
                 bulk_df = load_data(bulk_file.getvalue(), bulk_file.name)
                 
                 if bulk_df is not None:
-                    # Kiểm tra kiểm tra schema xem có đủ các cột X không
                     missing_cols = [c for c in feature_cols if c not in bulk_df.columns]
                     
                     if missing_cols:
@@ -399,14 +380,11 @@ with tab4:
                     else:
                         st.success("✅ Cấu trúc schema hợp lệ! Hệ thống đang tiến hành xử lý chấm điểm...")
                         
-                        # Thực hiện tiền xử lý đồng bộ dữ liệu bằng bộ scaler cũ
                         bulk_X = bulk_df[feature_cols]
                         bulk_scaled = scaler.transform(bulk_X)
                         
-                        # Dự đoán nhãn rủi ro và xác suất
                         bulk_preds = model.predict(bulk_scaled)
                         
-                        # Tạo DataFrame kết quả trả ra cho người dùng
                         result_df = bulk_df.copy()
                         result_df['Du_Bao_Rui_Ro_Default'] = bulk_preds
                         
@@ -414,7 +392,6 @@ with tab4:
                             bulk_probs = model.predict_proba(bulk_scaled)[:, 1]
                             result_df['Xac_Suat_Gian_Lan_Percent'] = np.round(bulk_probs * 100, 2)
                         
-                        # Thống kê số lượng kết quả dự báo được
                         num_fraud = int(np.sum(bulk_preds == 1))
                         num_total = len(bulk_preds)
                         
@@ -425,7 +402,6 @@ with tab4:
                         st.markdown("##### 📋 Bảng kết quả dự báo tổng hợp (Xem trước 100 dòng đầu)")
                         st.dataframe(result_df.head(100), use_container_width=True)
                         
-                        # Tạo nút xuất dữ liệu kết quả ra file Excel/CSV để tải về máy
                         csv_buffer = io.StringIO()
                         result_df.to_csv(csv_buffer, index=False, encoding='utf-8-sig')
                         csv_output = csv_buffer.getvalue()
